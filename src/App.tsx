@@ -246,6 +246,9 @@ export default function App() {
                   <Activity className="w-6 h-6" />
                   <h1 className="text-xl font-black uppercase tracking-tight">GraphyMath</h1>
                 </div>
+                <div className="mb-1">
+                  <p className="text-xs font-bold text-[#141414]/80 tracking-tight">Antonio Seguí Valentín-RC</p>
+                </div>
                 <p className="text-[10px] opacity-50 font-mono tracking-widest uppercase">Scientific Plotting v1.2</p>
               </div>
 
