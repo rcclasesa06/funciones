@@ -1,0 +1,36 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account information",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "email": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["username", "email", "createdAt"]
+    },
+    "PopularFunction": {
+      "title": "Popular Function",
+      "description": "Stat for a frequently used math function",
+      "type": "object",
+      "properties": {
+        "equation": { "type": "string" },
+        "useCount": { "type": "number" },
+        "lastUsed": { "type": "string", "format": "date-time" }
+      },
+      "required": ["equation", "useCount"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Registered user profiles"
+    },
+    "/popular_functions/{funcId}": {
+      "schema": "PopularFunction",
+      "description": "Global statistics for function usage"
+    }
+  }
+}

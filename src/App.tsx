@@ -21,9 +21,16 @@ import {
   Palette, 
   Plus, 
   RefreshCw,
-  Move
+  Move,
+  LogOut,
+  User as UserIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { onAuthStateChanged, signOut, User } from 'firebase/auth';
+import { doc, setDoc, increment } from 'firebase/firestore';
+import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
+import AuthModal from './components/AuthModal';
+import PopularFunctions from './components/PopularFunctions';
 
 // --- Constants & Types ---
 
@@ -46,11 +53,78 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Auth & Usage
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthOpen, setAuthOpen] = useState(false);
+  const [forceAuthMessage, setForceAuthMessage] = useState<string | null>(null);
+
   // Interaction State
   const containerRef = useRef<HTMLDivElement>(null);
   const [isPanning, setIsPanning] = useState(false);
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
   const [touchDist, setTouchDist] = useState<number | null>(null);
+
+  // --- Auth & Usage Tracking ---
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      if (u) {
+        setAuthOpen(false);
+        setForceAuthMessage(null);
+      }
+    });
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    // Check usage on mount and when user changes
+    if (!user) {
+      const count = parseInt(localStorage.getItem('usageCount') || '0');
+      if (count >= 2) {
+        setForceAuthMessage("Registrate para seguir usando la app");
+        setAuthOpen(true);
+      }
+    }
+  }, [user]);
+
+  const trackUsage = async (eq: string) => {
+    // Local increment
+    const count = parseInt(localStorage.getItem('usageCount') || '0') + 1;
+    localStorage.setItem('usageCount', count.toString());
+
+    if (!user && count >= 2) {
+      setForceAuthMessage("Registrate para seguir usando la app");
+      setAuthOpen(true);
+    }
+
+    // Firestore tracking
+    const path = 'popular_functions';
+    try {
+      const cleanId = eq.replace(/[^a-z0-9]/gi, '_').substring(0, 100).toLowerCase();
+      if (!cleanId) return;
+      const ref = doc(db, path, cleanId);
+      await setDoc(ref, {
+        equation: eq,
+        useCount: increment(1),
+        lastUsed: new Date().toISOString()
+      }, { merge: true });
+    } catch (err) {
+      // We don't want to crash the whole app if tracking fails, but we follow guidelines
+      try {
+        handleFirestoreError(err, OperationType.WRITE, path);
+      } catch (finalErr) {
+        console.error("Firestore tracking error swallowed:", finalErr);
+      }
+    }
+  };
+
+  // Trigger tracking when equation changes and is valid
+  useEffect(() => {
+    if (equation && !error) {
+      const timer = setTimeout(() => trackUsage(equation), 2000); // Debounce tracking
+      return () => clearTimeout(timer);
+    }
+  }, [equation, error]);
 
   // --- Zoom Logic (Wheel) ---
   const handleWheel = (e: WheelEvent) => {
@@ -242,14 +316,40 @@ export default function App() {
               className="fixed inset-y-0 left-0 w-full max-w-sm bg-[#E4E3E0] border-r border-[#141414] flex flex-col h-full z-50 shadow-2xl overflow-y-auto"
             >
               <div className="p-8 pb-4 border-b border-[#141414]/10">
-                <div className="flex items-center gap-3 mb-1">
-                  <Activity className="w-6 h-6" />
-                  <h1 className="text-xl font-black uppercase tracking-tight">GraphyMath</h1>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <Activity className="w-6 h-6" />
+                    <h1 className="text-xl font-black uppercase tracking-tight">GraphyMath</h1>
+                  </div>
+                  {user && (
+                    <button 
+                      onClick={() => signOut(auth)}
+                      className="p-2 hover:bg-red-100 text-red-600 rounded-full transition-colors"
+                      title="Cerrar Sesión"
+                    >
+                      <LogOut className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
-                <div className="mb-1">
-                  <p className="text-xs font-bold text-[#141414]/80 tracking-tight">Antonio Seguí Valentín-RC</p>
+                <div className="mb-1 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-bold text-[#141414]/80 tracking-tight">Antonio Seguí Valentín-RC</p>
+                    {user && (
+                      <p className="text-[9px] font-mono opacity-50 flex items-center gap-1">
+                        <UserIcon className="w-2 h-2" /> {user.displayName || user.email}
+                      </p>
+                    )}
+                  </div>
+                  {!user && (
+                    <button 
+                      onClick={() => setAuthOpen(true)}
+                      className="text-[9px] font-black uppercase bg-[#141414] text-[#E4E3E0] px-2 py-1"
+                    >
+                      Login
+                    </button>
+                  )}
                 </div>
-                <p className="text-[10px] opacity-50 font-mono tracking-widest uppercase">Scientific Plotting v1.2</p>
+                <p className="text-[10px] opacity-50 font-mono tracking-widest uppercase mt-4">Scientific Plotting v1.3</p>
               </div>
 
               <div className="p-8 space-y-10 flex-1">
@@ -379,8 +479,6 @@ export default function App() {
         className={`flex-1 flex flex-col relative bg-white overflow-hidden scroll-none select-none touch-none ${isPanning ? 'cursor-grabbing' : 'cursor-crosshair'}`}
         onWheel={handleWheel}
         onMouseDown={(e) => {
-          // Pan only with middle button (1) per user request, but standard mouse drag (0) also often useful. 
-          // Rule said "si aprieto la rueda del ratón pueda arrastrar".
           if (e.button === 1 || e.button === 0) {
             startPanning(e.clientX, e.clientY);
           }
@@ -396,6 +494,15 @@ export default function App() {
         onTouchMove={handleTouchMove}
         onTouchEnd={stopPanning}
       >
+        <AuthModal 
+          isOpen={isAuthOpen} 
+          onClose={() => setAuthOpen(false)} 
+          forceMessage={forceAuthMessage} 
+        />
+        
+        {user && (
+          <PopularFunctions onSelect={(eq) => setEquation(eq)} />
+        )}
         {/* Interaction Info Tips */}
         <div className="absolute top-6 right-6 z-20 pointer-events-none flex flex-col items-end gap-2">
           <div className="font-mono text-[9px] bg-[#141414] text-[#E4E3E0] px-3 py-1.5 shadow-xl border border-[#E4E3E0]/20 flex items-center gap-2">
