@@ -29,7 +29,7 @@ import { motion, AnimatePresence } from 'motion/react';
 
 const DEFAULT_EQUATION = "a * sin(b * x) + c";
 const DEFAULT_COLOR = "#ef4444"; // Red-500
-const SAMPLE_POINTS = 200;
+const SAMPLE_POINTS = 1000;
 
 interface Point {
   x: number;
@@ -151,31 +151,47 @@ export default function App() {
     }
   }, [equation]);
 
+  // Pre-compile the equation for performance
+  const compiled = useMemo(() => {
+    try {
+      return math.compile(equation);
+    } catch (err) {
+      return null;
+    }
+  }, [equation]);
+
   // Generate plot data
   const data = useMemo(() => {
+    if (!compiled) return [];
     const points: Point[] = [];
-    const step = (xRange.max - xRange.min) / SAMPLE_POINTS;
+    const span = xRange.max - xRange.min;
+    const step = span / SAMPLE_POINTS;
     
     try {
-      const compiled = math.compile(equation);
-      for (let x = xRange.min; x <= xRange.max; x += step) {
+      for (let i = 0; i <= SAMPLE_POINTS; i++) {
+        const x = xRange.min + (i * step);
         const scope = { ...parameters, x };
         const y = compiled.evaluate(scope);
         
         if (typeof y === 'number' && isFinite(y)) {
-          points.push({ x: Number(x.toFixed(2)), y: Number(y.toFixed(4)) });
+          // No rounding here to maintain full precision during pan/zoom
+          points.push({ x, y });
         }
       }
       setError(null);
     } catch (err: any) {
-      // Handled by effect
+      // Evaluation error
     }
     
     return points;
-  }, [equation, parameters, xRange]);
+  }, [compiled, parameters, xRange]);
 
   const handleParamChange = (name: string, value: number) => {
     setParameters(prev => ({ ...prev, [name]: value }));
+  };
+
+  const insertConstant = (c: string) => {
+    setEquation(prev => prev + c);
   };
 
   const resetView = () => {
@@ -249,6 +265,27 @@ export default function App() {
                       placeholder="e.g. a * x^2"
                     />
                     <div className="absolute top-4 right-4 opacity-20 pointer-events-none italic font-serif">y=</div>
+                  </div>
+                  
+                  {/* Quick Constants */}
+                  <div className="flex gap-2 mt-3 overflow-x-auto pb-1 no-scrollbar">
+                    {[
+                      { label: 'π', val: 'pi' },
+                      { label: 'e', val: 'e' },
+                      { label: 'φ', val: 'phi' },
+                      { label: '√', val: 'sqrt(' },
+                      { label: '^', val: '^' },
+                      { label: '(', val: '(' },
+                      { label: ')', val: ')' },
+                    ].map(c => (
+                      <button
+                        key={c.val}
+                        onClick={() => insertConstant(c.val)}
+                        className="px-3 py-1.5 bg-[#141414] text-[#E4E3E0] text-[10px] font-bold rounded-sm hover:bg-[#333] transition-colors shrink-0"
+                      >
+                        {c.label}
+                      </button>
+                    ))}
                   </div>
                 </section>
 
@@ -398,7 +435,7 @@ export default function App() {
               <ReferenceLine y={0} stroke="#141414" strokeWidth={1} opacity={0.15} />
               
               <Line 
-                type="monotone" 
+                type="linear" 
                 dataKey="y" 
                 stroke={color} 
                 strokeWidth={thickness} 
