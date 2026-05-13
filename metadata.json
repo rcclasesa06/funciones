@@ -1,0 +1,6 @@
+{
+  "name": "GraphyMath",
+  "description": "A real-time mathematical function plotter with interactive parameters, custom styling, and instant visualization.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
