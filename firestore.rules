@@ -16,16 +16,30 @@ service cloud.firestore {
     }
 
     function isValidId(id) {
-      return id is string && id.size() <= 128;
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['username', 'email', 'createdAt'])
+        && data.username is string
+        && data.username.size() > 0
+        && data.username.size() <= 100
+        && data.email is string
+        && data.email.size() <= 200;
+    }
+
+    function isValidFunction(data) {
+      return data.keys().hasAll(['equation', 'useCount'])
+        && data.equation is string
+        && data.equation.size() <= 1000
+        && data.useCount is number;
     }
 
     // Users Collection
     match /users/{userId} {
       allow get: if isOwner(userId);
       allow create: if isOwner(userId) 
-        && request.resource.data.keys().hasAll(['username', 'email', 'createdAt'])
-        && request.resource.data.username is string
-        && request.resource.data.username.size() > 0
+        && isValidUser(request.resource.data)
         && request.resource.data.email == request.auth.token.email;
       allow update: if isOwner(userId)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['username']);
@@ -33,16 +47,17 @@ service cloud.firestore {
 
     // Popular Functions Collection
     match /popular_functions/{funcId} {
-      // Only registered users can see the popular functions
-      allow list, get: if isSignedIn();
+      allow get: if true; // Permite ver detalles individuales
+      allow list: if isSignedIn(); // Solo registrados ven el Top completo
       
-      // Anyone can contribute to usage stats (creation or increment)
-      allow create: if request.resource.data.keys().hasAll(['equation', 'useCount'])
-        && request.resource.data.equation is string
-        && request.resource.data.useCount is number;
+      allow create: if isValidId(funcId) && isValidFunction(request.resource.data);
       
-      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasAny(['useCount', 'lastUsed'])
-        && request.resource.data.useCount is number;
+      allow update: if isValidId(funcId) 
+        && (
+          // Acción: Incrementar uso
+          request.resource.data.diff(resource.data).affectedKeys().hasAny(['useCount', 'lastUsed'])
+          && request.resource.data.useCount is number
+        );
     }
   }
 }
